@@ -28,11 +28,17 @@ let allProducts = [];
 let checkoutCustomer = {};
 let currentEditProductId = null;
 let pendingQrFile = null;
-let userOrdersUnsub = null; // firestore listener for user orders
+let userOrdersUnsub = null;
+let adminOrdersUnsub = null;
+
+let prevOrderStatuses = {};
 
 // ==================== HELPERS ====================
 function $(id) { return document.getElementById(id); }
-function showToast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2200); }
+function showToast(msg, duration = 2200) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
 function openModal(id) { $(id).classList.add('open'); }
 function closeModal(id) { $(id).classList.remove('open'); }
 function showLoading(msg = 'Loading…') { const o = $('loadingOverlay'); if (!o) return; o.querySelector('p').textContent = msg; o.classList.add('visible'); }
@@ -40,8 +46,8 @@ function hideLoading() { const o = $('loadingOverlay'); if (!o) return; o.classL
 function updateBadges() {
   const cc = cart.reduce((s, i) => s + i.qty, 0);
   const cb = $('cartBadge'); cb.textContent = cc; cb.classList.toggle('visible', cc > 0);
-  favorites.length > 0 ? $('favBadge').classList.add('visible') : $('favBadge').classList.remove('visible');
   $('favBadge').textContent = favorites.length;
+  $('favBadge').classList.toggle('visible', favorites.length > 0);
 }
 function saveCart() { localStorage.setItem('loyy_cart', JSON.stringify(cart)); updateBadges(); }
 function getCatEmoji(cat) { return { 't-shirts': '👕', accessories: '📿', shoes: '👟', clothing: '🧥' }[cat] || '🛍️'; }
@@ -49,6 +55,50 @@ function formatDate(ts) {
   if (!ts) return '';
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// ==================== IN-APP NOTIFICATION BANNER ====================
+function showNotifBanner(icon, title, body, onClick) {
+  const old = document.getElementById('notifBanner');
+  if (old) old.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'notifBanner';
+  banner.innerHTML = `
+    <div class="notif-banner-icon">${icon}</div>
+    <div class="notif-banner-text">
+      <div class="notif-banner-title">${title}</div>
+      <div class="notif-banner-body">${body}</div>
+    </div>
+    <button class="notif-banner-close">✕</button>
+  `;
+  banner.style.cssText = `
+    position:fixed;top:calc(var(--nav-h) + 8px);left:12px;right:12px;
+    z-index:9998;background:#1e1e1e;border:1px solid var(--accent);
+    border-radius:14px;padding:14px 44px 14px 14px;
+    display:flex;align-items:center;gap:12px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.5);
+    cursor:pointer;transform:translateY(-120%);transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+  `;
+  banner.querySelector('.notif-banner-icon').style.cssText = 'font-size:28px;flex-shrink:0';
+  banner.querySelector('.notif-banner-title').style.cssText = 'font-size:13px;font-weight:700;color:var(--accent);margin-bottom:2px';
+  banner.querySelector('.notif-banner-body').style.cssText = 'font-size:12px;color:rgba(245,243,239,0.75);line-height:1.4';
+  banner.querySelector('.notif-banner-close').style.cssText = 'position:absolute;top:10px;right:10px;background:none;border:none;color:var(--gray);cursor:pointer;font-size:14px;padding:4px';
+
+  document.body.appendChild(banner);
+  requestAnimationFrame(() => { banner.style.transform = 'translateY(0)'; });
+
+  const dismiss = () => {
+    banner.style.transform = 'translateY(-120%)';
+    setTimeout(() => banner.remove(), 400);
+  };
+  banner.addEventListener('click', (e) => {
+    if (e.target.classList.contains('notif-banner-close')) { dismiss(); return; }
+    dismiss();
+    if (onClick) onClick();
+  });
+  banner.querySelector('.notif-banner-close').addEventListener('click', e => { e.stopPropagation(); dismiss(); });
+  setTimeout(dismiss, 6000);
 }
 
 // ==================== NAVIGATION ====================
@@ -60,7 +110,10 @@ function navigateTo(page) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (page === 'cart') renderCart();
   if (page === 'favorites') renderFavorites();
-  if (page === 'orders') renderOrderHistory();
+  if (page === 'orders') {
+    renderOrderHistory();
+    markUserNotifsRead();
+  }
 }
 document.querySelectorAll('.bnav-btn').forEach(btn => btn.addEventListener('click', () => navigateTo(btn.dataset.page)));
 $('goHome').addEventListener('click', () => navigateTo('home'));
@@ -225,7 +278,9 @@ auth.onAuthStateChanged(user => {
     $('ordersNavBtn').style.display = 'flex';
     $('ordersNavBnavBtn').style.display = 'flex';
     $('myOrdersRow').style.display = 'flex';
+    prevOrderStatuses = {};
     listenUserOrders(user.uid);
+    if (isAdmin) listenAdminOrders();
   } else {
     $('settingsUserName').textContent = 'Guest User';
     $('settingsUserEmail').textContent = 'Not logged in';
@@ -235,31 +290,155 @@ auth.onAuthStateChanged(user => {
     $('ordersNavBtn').style.display = 'none';
     $('ordersNavBnavBtn').style.display = 'none';
     $('myOrdersRow').style.display = 'none';
+    $('ordersBadge').textContent = '0';
     $('ordersBadge').classList.remove('visible');
     if (userOrdersUnsub) { userOrdersUnsub(); userOrdersUnsub = null; }
+    if (adminOrdersUnsub) { adminOrdersUnsub(); adminOrdersUnsub = null; }
   }
 });
-$('goAdminBtn').addEventListener('click', () => { if (isAdmin) $('adminPanel').classList.add('open'); else showToast('Admin access only'); });
+
+$('goAdminBtn').addEventListener('click', () => {
+  if (isAdmin) {
+    $('adminPanel').classList.add('open');
+    // FIX: safe badge clear — element may not exist yet
+    const ab = $('adminOrdersBadge');
+    if (ab) { ab.textContent = '0'; ab.classList.remove('visible'); }
+  } else showToast('Admin access only');
+});
 $('closeAdmin').addEventListener('click', () => $('adminPanel').classList.remove('open'));
 
-// ==================== ORDER HISTORY (User) ====================
+// ==================== USER ORDER LISTENER ====================
 let userOrders = [];
+let isFirstUserOrderLoad = true;
 
+// FIX: robust listener with index-error fallback so orders always load
 function listenUserOrders(uid) {
-  if (userOrdersUnsub) userOrdersUnsub();
+  if (userOrdersUnsub) { userOrdersUnsub(); userOrdersUnsub = null; }
+  isFirstUserOrderLoad = true;
+
+  function applySnapshot(docs) {
+    const newOrders = docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => {
+        const ta = a.createdAt?.toMillis?.() || 0;
+        const tb = b.createdAt?.toMillis?.() || 0;
+        return tb - ta;
+      });
+
+    if (!isFirstUserOrderLoad) {
+      newOrders.forEach(order => {
+        const prev = prevOrderStatuses[order.id];
+        const curr = order.status;
+        if (prev !== undefined && prev !== curr) {
+          handleUserOrderStatusChange(order, prev, curr);
+        }
+      });
+    }
+
+    newOrders.forEach(o => { prevOrderStatuses[o.id] = o.status; });
+    userOrders = newOrders;
+    isFirstUserOrderLoad = false;
+
+    // FIX: badge counts orders with notifUnread flag OR new pending orders user hasn't seen
+    const unread = userOrders.filter(o => o.notifUnread).length;
+    $('ordersBadge').textContent = unread;
+    $('ordersBadge').classList.toggle('visible', unread > 0);
+
+    if ($('page-orders').classList.contains('active')) renderOrderHistory();
+  }
+
+  // Try with orderBy first (needs Firestore composite index)
   userOrdersUnsub = db.collection('orders')
     .where('userId', '==', uid)
     .orderBy('createdAt', 'desc')
-    .onSnapshot(snap => {
-      userOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const pending = userOrders.filter(o => o.status === 'pending').length;
-      $('ordersBadge').textContent = pending;
-      $('ordersBadge').classList.toggle('visible', pending > 0);
-      // Re-render if on orders page
-      if ($('page-orders').classList.contains('active')) renderOrderHistory();
-    }, err => console.warn('Orders listener error:', err));
+    .onSnapshot(
+      snap => applySnapshot(snap.docs),
+      err => {
+        // FIX: if index missing, fall back to simple query and sort client-side
+        console.warn('Order query needs index, falling back:', err.message);
+        console.warn('👉 Create index here:', err.message.match(/https:\/\/\S+/)?.[0] || 'Firebase Console → Indexes');
+        userOrdersUnsub = db.collection('orders')
+          .where('userId', '==', uid)
+          .onSnapshot(
+            snap => applySnapshot(snap.docs),
+            err2 => console.error('Orders listener failed completely:', err2)
+          );
+      }
+    );
 }
 
+function handleUserOrderStatusChange(order, prevStatus, newStatus) {
+  const shortId = order.id.slice(0, 8).toUpperCase();
+  if (newStatus === 'prepare') {
+    showNotifBanner('📦', 'Order Being Prepared!',
+      `Order #${shortId} has been approved and is being prepared for you.`,
+      () => navigateTo('orders')
+    );
+  } else if (newStatus === 'delivery') {
+    showNotifBanner('🚚', 'Order Out for Delivery!',
+      `Order #${shortId} is on its way to you. Get ready!`,
+      () => navigateTo('orders')
+    );
+  } else if (newStatus === 'rejected') {
+    showNotifBanner('❌', 'Order Rejected',
+      `Order #${shortId} was rejected. Please contact us via Telegram.`,
+      () => navigateTo('orders')
+    );
+  }
+}
+
+function markUserNotifsRead() {
+  if (!currentUser) return;
+  userOrders.forEach(o => {
+    if (o.notifUnread) {
+      db.collection('orders').doc(o.id).update({ notifUnread: false }).catch(() => {});
+    }
+  });
+  $('ordersBadge').textContent = '0';
+  $('ordersBadge').classList.remove('visible');
+}
+
+// ==================== ADMIN ORDER LISTENER ====================
+let isFirstAdminLoad = true;
+
+function listenAdminOrders() {
+  if (adminOrdersUnsub) { adminOrdersUnsub(); adminOrdersUnsub = null; }
+  isFirstAdminLoad = true;
+
+  adminOrdersUnsub = db.collection('orders')
+    .orderBy('createdAt', 'desc')
+    .onSnapshot(snap => {
+      const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const pendingCount = orders.filter(o => o.status === 'pending').length;
+
+      // FIX: safe badge update — element might not exist if HTML not updated yet
+      const badge = $('adminOrdersBadge');
+      if (badge) {
+        badge.textContent = pendingCount;
+        badge.classList.toggle('visible', pendingCount > 0);
+      }
+
+      if (!isFirstAdminLoad) {
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const o = { id: change.doc.id, ...change.doc.data() };
+            if (o.status === 'pending') {
+              showNotifBanner('🛒', 'New Order Received!',
+                `${o.customer?.name || 'A customer'} placed an order — $${Number(o.total).toFixed(2)}`,
+                () => { $('adminPanel').classList.add('open'); loadAdminOrders(); }
+              );
+            }
+          }
+        });
+      }
+      isFirstAdminLoad = false;
+
+      if ($('atab-orders')?.classList.contains('active') && $('adminPanel').classList.contains('open')) {
+        renderAdminOrdersList(orders);
+      }
+    }, err => console.warn('Admin orders listener error:', err));
+}
+
+// ==================== ORDER HISTORY (User) ====================
 function renderOrderHistory() {
   if (!currentUser) {
     $('orderHistoryList').innerHTML = '';
@@ -277,7 +456,9 @@ function renderOrderHistory() {
   $('orderHistoryList').innerHTML = userOrders.map(o => {
     const statusLabel = { pending: 'Pending', prepare: 'Preparing', delivery: 'Delivery', rejected: 'Rejected' }[o.status] || o.status;
     const itemsSummary = (o.items || []).map(i => `${i.name} ×${i.qty}`).join(', ');
-    return `<div class="order-hist-card" data-id="${o.id}">
+    const isUnread = o.notifUnread;
+    return `<div class="order-hist-card${isUnread ? ' order-unread' : ''}" data-id="${o.id}">
+      ${isUnread ? '<div class="order-unread-dot"></div>' : ''}
       <div class="order-hist-header">
         <span class="order-hist-id">#${o.id.slice(0, 8).toUpperCase()}</span>
         <span class="status-badge ${o.status}">${statusLabel}</span>
@@ -290,18 +471,23 @@ function renderOrderHistory() {
     </div>`;
   }).join('');
   document.querySelectorAll('.order-hist-card').forEach(card => {
-    card.addEventListener('click', () => showOrderHistDetail(card.dataset.id));
+    card.addEventListener('click', () => {
+      const oid = card.dataset.id;
+      if (card.classList.contains('order-unread')) {
+        db.collection('orders').doc(oid).update({ notifUnread: false }).catch(() => {});
+      }
+      showOrderHistDetail(oid);
+    });
   });
 }
 
 function showOrderHistDetail(orderId) {
   const o = userOrders.find(x => x.id === orderId);
   if (!o) return;
-  // Status timeline: pending → prepare → delivery
   const steps = [
-    { key: 'pending', label: '📋 Pending', icon: '📋' },
-    { key: 'prepare', label: '📦 Preparing', icon: '📦' },
-    { key: 'delivery', label: '🚚 Delivery', icon: '🚚' },
+    { key: 'pending', label: 'Pending', icon: '📋' },
+    { key: 'prepare', label: 'Preparing', icon: '📦' },
+    { key: 'delivery', label: 'Delivery', icon: '🚚' },
   ];
   const statusOrder = ['pending', 'prepare', 'delivery'];
   const currentIdx = statusOrder.indexOf(o.status);
@@ -309,15 +495,12 @@ function showOrderHistDetail(orderId) {
     ${steps.map((s, i) => {
       const cls = i < currentIdx ? 'done' : (i === currentIdx ? 'active' : '');
       const icon = i < currentIdx ? '✓' : s.icon;
-      return `<div class="tl-step">
-        <div class="tl-dot ${cls}">${icon}</div>
-        <div class="tl-label ${cls}">${s.label}</div>
-      </div>`;
+      return `<div class="tl-step"><div class="tl-dot ${cls}">${icon}</div><div class="tl-label ${cls}">${s.icon} ${s.label}</div></div>`;
     }).join('')}
   </div>`;
 
   const rejectedBanner = o.status === 'rejected'
-    ? `<div style="background:rgba(229,62,62,0.1);border:1px solid #e53e3e;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#e53e3e;text-align:center">❌ Order was rejected. Please contact support.</div>`
+    ? `<div style="background:rgba(229,62,62,0.1);border:1px solid #e53e3e;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#e53e3e;text-align:center">❌ Order was rejected. Please contact support via Telegram.</div>`
     : '';
 
   $('orderHistDetailContent').innerHTML = `
@@ -350,17 +533,14 @@ function showOrderHistDetail(orderId) {
 // ==================== CHECKOUT ====================
 $('checkoutBtn').addEventListener('click', () => {
   if (!cart.length) { showToast('Cart is empty'); return; }
-  // Must be logged in to order
   if (!currentUser) {
     showToast('Please login to place an order');
     openModal('loginModal');
     return;
   }
-  // Reset steps
   $('step1').style.display = 'block';
   $('step2').style.display = 'none';
   $('step3').style.display = 'none';
-  // Show totals in step 1
   const sub = cart.reduce((s, i) => s + i.price * i.qty, 0);
   $('checkoutSubtotal').textContent = `$${sub.toFixed(2)}`;
   $('checkoutTotal').textContent = `$${(sub + DELIVERY_FEE).toFixed(2)}`;
@@ -375,12 +555,10 @@ $('step1Next').addEventListener('click', () => {
   $('qrAmount').textContent = `$${total.toFixed(2)}`;
   const qrContainer = $('qrContainer');
   if (globalQrPaymentUrl) qrContainer.innerHTML = `<img src="${globalQrPaymentUrl}" style="width:160px;border-radius:8px"/>`;
-  // Close checkout, show warning modal first
   closeModal('checkoutModal');
   openModal('paymentWarningModal');
 });
 
-// Warning modal agree button → open checkout step 2
 $('warningAgreeBtn').addEventListener('click', () => {
   closeModal('paymentWarningModal');
   $('step1').style.display = 'none';
@@ -404,7 +582,7 @@ $('step2Next').addEventListener('click', async function () {
       const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, { method: 'POST', body: fd });
       const data = await res.json();
       screenshotUrl = data.secure_url;
-    } else { screenshotUrl = 'https://via.placeholder.com/400?text=Payment+Proof'; showToast('Cloudinary preset not set, using placeholder.'); }
+    } else { screenshotUrl = 'https://via.placeholder.com/400?text=Payment+Proof'; }
     const total = cart.reduce((s, i) => s + i.price * i.qty, 0) + DELIVERY_FEE;
     const docRef = await db.collection('orders').add({
       customer: checkoutCustomer,
@@ -412,6 +590,8 @@ $('step2Next').addEventListener('click', async function () {
       total: total,
       deliveryFee: DELIVERY_FEE,
       status: 'pending',
+      // FIX: set true so the new order shows with badge/unread indicator on Orders page
+      notifUnread: true,
       screenshotUrl: screenshotUrl,
       userId: currentUser.uid,
       userEmail: currentUser.email,
@@ -442,43 +622,54 @@ function setupAdminTabs() {
 function loadAdminOrders() {
   const container = $('adminOrdersList');
   container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--gray)">Loading orders...</div>';
-  db.collection('orders').orderBy('createdAt', 'desc').onSnapshot(snap => {
-    if (snap.empty) { container.innerHTML = '<p style="color:var(--gray);padding:20px;text-align:center">No orders yet.</p>'; return; }
-    container.innerHTML = snap.docs.map(d => {
-      const o = { id: d.id, ...d.data() };
-      const actionBtns = getAdminActionBtns(o);
-      return `<div class="admin-order-card">
-        <div class="order-card-header">
-          <span class="order-id">#${o.id.slice(0, 8).toUpperCase()}</span>
-          <span class="order-status ${o.status}">${o.status}</span>
-        </div>
-        <div class="order-card-customer">${o.customer?.name || 'Unknown'} · ${o.customer?.phone || ''}</div>
-        <div class="order-card-amount">$${Number(o.total).toFixed(2)}</div>
-        <div class="order-card-actions">
-          <button class="view-ss-btn" data-id="${o.id}">View Details</button>
-          ${actionBtns}
-        </div>
-      </div>`;
-    }).join('');
-    container.querySelectorAll('.view-ss-btn').forEach(b => b.onclick = () => showOrderDetail(b.dataset.id));
-    container.querySelectorAll('.approve-btn').forEach(b => b.onclick = () => updateOrderStatus(b.dataset.id, 'prepare'));
-    container.querySelectorAll('.delivery-btn').forEach(b => b.onclick = () => updateOrderStatus(b.dataset.id, 'delivery'));
-    container.querySelectorAll('.reject-btn').forEach(b => b.onclick = () => updateOrderStatus(b.dataset.id, 'rejected'));
+  db.collection('orders').orderBy('createdAt', 'desc').get().then(snap => {
+    const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderAdminOrdersList(orders);
   });
 }
 
+function renderAdminOrdersList(orders) {
+  const container = $('adminOrdersList');
+  if (!container) return;
+  if (!orders.length) { container.innerHTML = '<p style="color:var(--gray);padding:20px;text-align:center">No orders yet.</p>'; return; }
+  container.innerHTML = orders.map(o => {
+    const actionBtns = getAdminActionBtns(o);
+    return `<div class="admin-order-card">
+      <div class="order-card-header">
+        <span class="order-id">#${o.id.slice(0, 8).toUpperCase()}</span>
+        <span class="order-status ${o.status}">${o.status}</span>
+      </div>
+      <div class="order-card-customer">${o.customer?.name || 'Unknown'} · ${o.customer?.phone || ''}</div>
+      <div style="font-size:12px;color:var(--gray);margin-bottom:6px">${o.userEmail || ''}</div>
+      <div class="order-card-amount">$${Number(o.total).toFixed(2)}</div>
+      <div class="order-card-actions">
+        <button class="view-ss-btn" data-id="${o.id}">View Details</button>
+        ${actionBtns}
+      </div>
+    </div>`;
+  }).join('');
+  container.querySelectorAll('.view-ss-btn').forEach(b => b.onclick = () => showOrderDetail(b.dataset.id));
+  container.querySelectorAll('.approve-btn').forEach(b => b.onclick = () => updateOrderStatus(b.dataset.id, 'prepare'));
+  container.querySelectorAll('.delivery-btn').forEach(b => b.onclick = () => updateOrderStatus(b.dataset.id, 'delivery'));
+  container.querySelectorAll('.reject-btn').forEach(b => b.onclick = () => updateOrderStatus(b.dataset.id, 'rejected'));
+}
+
 function getAdminActionBtns(o) {
-  if (o.status === 'pending') {
-    return `<button class="approve-btn" data-id="${o.id}">📦 Prepare</button><button class="reject-btn" data-id="${o.id}">✗ Reject</button>`;
-  } else if (o.status === 'prepare') {
-    return `<button class="delivery-btn" data-id="${o.id}">🚚 Send Delivery</button>`;
-  }
+  if (o.status === 'pending') return `<button class="approve-btn" data-id="${o.id}">📦 Prepare</button><button class="reject-btn" data-id="${o.id}">✗ Reject</button>`;
+  if (o.status === 'prepare') return `<button class="delivery-btn" data-id="${o.id}">🚚 Send Delivery</button>`;
   return '';
 }
 
 function updateOrderStatus(id, status) {
-  db.collection('orders').doc(id).update({ status })
-    .then(() => showToast(`Order moved to: ${status}!`))
+  const updateData = { status };
+  if (['prepare', 'delivery', 'rejected'].includes(status)) {
+    updateData.notifUnread = true;
+  }
+  db.collection('orders').doc(id).update(updateData)
+    .then(() => {
+      showToast(`Order moved to: ${status}!`);
+      loadAdminOrders();
+    })
     .catch(() => showToast('Error updating'));
 }
 
@@ -509,9 +700,9 @@ function showOrderDetail(id) {
       ${o.screenshotUrl ? `<div class="order-detail-section"><h4 style="margin-bottom:8px">Payment Screenshot</h4><img src="${o.screenshotUrl}" class="order-ss-img"/></div>` : '<p style="color:var(--gray);font-size:13px">No screenshot uploaded</p>'}
       ${actionBtns ? `<div style="display:flex;gap:10px;margin-top:16px">${
         o.status === 'pending'
-          ? `<button class="approve-btn" id="detailApprove" style="flex:1" data-id="${o.id}">📦 Prepare</button><button class="reject-btn" id="detailReject" style="flex:1" data-id="${o.id}">✗ Reject</button>`
+          ? `<button class="approve-btn" id="detailApprove" style="flex:1">📦 Prepare</button><button class="reject-btn" id="detailReject" style="flex:1">✗ Reject</button>`
           : o.status === 'prepare'
-          ? `<button class="delivery-btn" id="detailDelivery" style="flex:1" data-id="${o.id}">🚚 Send Delivery</button>`
+          ? `<button class="delivery-btn" id="detailDelivery" style="flex:1">🚚 Send Delivery</button>`
           : ''
       }</div>` : ''}`;
     openModal('orderDetailModal');
@@ -579,9 +770,7 @@ $('cancelEditBtn').addEventListener('click', () => { currentEditProductId = null
 async function loadQrSettingsForDisplay() {
   const doc = await db.collection('settings').doc('payment').get();
   if (doc.exists && doc.data().qrUrl) {
-    globalQrPaymentUrl = doc.data().qrUrl;
-    $('qrImagePreview').src = globalQrPaymentUrl;
-    $('qrImagePreview').style.display = 'block';
+    globalQrPaymentUrl = doc.data().qrUrl; $('qrImagePreview').src = globalQrPaymentUrl; $('qrImagePreview').style.display = 'block';
   } else { globalQrPaymentUrl = null; $('qrImagePreview').style.display = 'none'; }
 }
 $('qrImageFile').addEventListener('change', function (e) {
@@ -591,7 +780,7 @@ $('qrImageFile').addEventListener('change', function (e) {
 });
 $('saveQrSettingsBtn').addEventListener('click', async () => {
   const file = $('qrImageFile').files[0];
-  if (!file && !globalQrPaymentUrl) { showToast('Please select a QR image to upload'); return; }
+  if (!file && !globalQrPaymentUrl) { showToast('Please select a QR image'); return; }
   if (!file) { showToast('No new image selected'); return; }
   const btn = $('saveQrSettingsBtn'); btn.textContent = 'Uploading...'; btn.disabled = true;
   const progressDiv = $('qrUploadProgress'); progressDiv.style.display = 'block'; $('qrProgressFill').style.width = '20%'; $('qrProgressText').textContent = 'Uploading QR...';
@@ -601,12 +790,11 @@ $('saveQrSettingsBtn').addEventListener('click', async () => {
     const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, { method: 'POST', body: fd });
     const data = await res.json();
     $('qrProgressFill').style.width = '100%'; $('qrProgressText').textContent = 'Done!';
-    const qrUrl = data.secure_url;
-    await db.collection('settings').doc('payment').set({ qrUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-    globalQrPaymentUrl = qrUrl;
-    showToast('QR code updated successfully!');
+    await db.collection('settings').doc('payment').set({ qrUrl: data.secure_url, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    globalQrPaymentUrl = data.secure_url;
+    showToast('QR code updated!');
     $('qrImageFile').value = ''; pendingQrFile = null;
-  } catch (err) { console.error(err); $('qrSettingsError').textContent = 'Upload failed: ' + err.message; showToast('Error uploading QR'); }
+  } catch (err) { $('qrSettingsError').textContent = 'Upload failed: ' + err.message; showToast('Error uploading QR'); }
   finally { setTimeout(() => { progressDiv.style.display = 'none'; $('qrProgressFill').style.width = '0%'; }, 1000); btn.textContent = 'Save QR Settings'; btn.disabled = false; }
 });
 
