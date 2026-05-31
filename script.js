@@ -163,23 +163,36 @@ function renderProductGrid(gridId, products) {
   if (!products.length) { grid.innerHTML = '<p style="color:var(--gray);font-size:14px;padding:20px;grid-column:1/-1;text-align:center">No products found.</p>'; return; }
   grid.innerHTML = products.map(p => {
     const isFav = favorites.includes(p.id);
-    const img = p.imageUrl ? `<img src="${p.imageUrl}" alt="${p.name}" loading="lazy"/>` : `<div class="product-img-placeholder">${p.emoji || getCatEmoji(p.category)}</div>`;
-    return `<div class="product-card" data-id="${p.id}"><div class="product-card-img">${img}</div><div class="product-card-body"><div class="product-card-cat">${p.category}</div><div class="product-card-name">${p.name}</div><div class="product-card-bottom"><div class="product-card-price">$${Number(p.price).toFixed(2)}</div><div style="display:flex;gap:6px;"><button class="fav-btn ${isFav ? 'active' : ''}" title="Favorite"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button><button class="add-cart-btn">+ Cart</button></div></div></div></div>`;
+    const outOfStock = (p.stock || 0) <= 0;
+    const img = p.imageUrl ? `<img src="${p.imageUrl}" alt="${p.name}" loading="lazy" style="${outOfStock ? 'opacity:0.35;' : ''}"/>` : `<div class="product-img-placeholder" style="${outOfStock ? 'opacity:0.35;' : ''}">${p.emoji || getCatEmoji(p.category)}</div>`;
+    const cartBtn = outOfStock
+      ? `<button class="add-cart-btn" disabled style="background:#444;color:#888;cursor:not-allowed;opacity:0.5;">Out of Stock</button>`
+      : `<button class="add-cart-btn">+ Cart</button>`;
+    const stockBadge = outOfStock ? `<div style="position:absolute;top:8px;left:8px;background:rgba(229,62,62,0.85);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;letter-spacing:0.5px">OUT OF STOCK</div>` : (p.stock <= 3 ? `<div style="position:absolute;top:8px;left:8px;background:rgba(212,84,26,0.85);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;letter-spacing:0.5px">ONLY ${p.stock} LEFT</div>` : '');
+    return `<div class="product-card${outOfStock ? ' out-of-stock' : ''}" data-id="${p.id}" style="${outOfStock ? 'pointer-events:auto;' : ''}"><div class="product-card-img" style="position:relative;">${img}${stockBadge}</div><div class="product-card-body"><div class="product-card-cat">${p.category}</div><div class="product-card-name" style="${outOfStock ? 'opacity:0.5;' : ''}">${p.name}</div><div class="product-card-bottom"><div class="product-card-price" style="${outOfStock ? 'opacity:0.5;' : ''}">$${Number(p.price).toFixed(2)}</div><div style="display:flex;gap:6px;"><button class="fav-btn ${isFav ? 'active' : ''}" title="Favorite"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>${cartBtn}</div></div></div></div>`;
   }).join('');
   grid.querySelectorAll('.product-card').forEach(card => {
     const pid = card.dataset.id;
     card.addEventListener('click', e => { if (!e.target.closest('.fav-btn') && !e.target.closest('.add-cart-btn')) showProductDetail(pid); });
     card.querySelector('.fav-btn')?.addEventListener('click', e => { e.stopPropagation(); toggleFav(pid); });
-    card.querySelector('.add-cart-btn')?.addEventListener('click', e => { e.stopPropagation(); addToCart(pid); });
+    const addBtn = card.querySelector('.add-cart-btn');
+    if (addBtn && !addBtn.disabled) addBtn.addEventListener('click', e => { e.stopPropagation(); addToCart(pid); });
   });
 }
 function showProductDetail(id) {
   const p = allProducts.find(x => x.id === id);
   if (!p) return;
   const isFav = favorites.includes(p.id);
-  const img = p.imageUrl ? `<img src="${p.imageUrl}" alt="${p.name}"/>` : `<div style="font-size:90px;display:flex;align-items:center;justify-content:center;height:100%">${p.emoji || getCatEmoji(p.category)}</div>`;
-  $('productModalContent').innerHTML = `<div class="product-detail-img">${img}</div><div class="product-detail-cat">${p.category}</div><div class="product-detail-name">${p.name}</div><div class="product-detail-price">$${Number(p.price).toFixed(2)}</div><div class="product-detail-desc">${p.description || ''}</div><div class="product-detail-actions"><button class="btn-primary" id="pdAddCart">Add to Cart</button><button class="fav-btn ${isFav ? 'active' : ''}" id="pdFav" style="padding:12px;border:1px solid var(--border);border-radius:8px"><svg viewBox="0 0 24 24" width="22"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button></div>`;
-  $('pdAddCart').onclick = () => { addToCart(p.id); closeModal('productModal'); };
+  const outOfStock = (p.stock || 0) <= 0;
+  const img = p.imageUrl ? `<img src="${p.imageUrl}" alt="${p.name}" style="${outOfStock ? 'opacity:0.35;' : ''}"/>` : `<div style="font-size:90px;display:flex;align-items:center;justify-content:center;height:100%;${outOfStock ? 'opacity:0.35;' : ''}">${p.emoji || getCatEmoji(p.category)}</div>`;
+  const stockInfo = outOfStock
+    ? `<div style="background:rgba(229,62,62,0.12);border:1px solid #e53e3e;border-radius:8px;padding:8px 14px;margin-bottom:14px;font-size:12px;font-weight:700;color:#e53e3e;text-align:center;">❌ Out of Stock</div>`
+    : (p.stock <= 3 ? `<div style="background:rgba(212,84,26,0.12);border:1px solid var(--accent2);border-radius:8px;padding:8px 14px;margin-bottom:14px;font-size:12px;font-weight:700;color:var(--accent2);text-align:center;">⚠️ Only ${p.stock} left!</div>` : '');
+  const addCartBtn = outOfStock
+    ? `<button class="btn-primary" disabled style="flex:1;opacity:0.4;cursor:not-allowed;">Out of Stock</button>`
+    : `<button class="btn-primary" id="pdAddCart">Add to Cart</button>`;
+  $('productModalContent').innerHTML = `<div class="product-detail-img">${img}</div><div class="product-detail-cat">${p.category}</div><div class="product-detail-name">${p.name}</div><div class="product-detail-price">$${Number(p.price).toFixed(2)}</div>${stockInfo}<div class="product-detail-desc">${p.description || ''}</div><div class="product-detail-actions">${addCartBtn}<button class="fav-btn ${isFav ? 'active' : ''}" id="pdFav" style="padding:12px;border:1px solid var(--border);border-radius:8px"><svg viewBox="0 0 24 24" width="22"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button></div>`;
+  if (!outOfStock) $('pdAddCart').onclick = () => { addToCart(p.id); closeModal('productModal'); };
   $('pdFav').onclick = () => toggleFav(p.id);
   openModal('productModal');
 }
@@ -188,9 +201,15 @@ function showProductDetail(id) {
 function addToCart(productId) {
   const p = allProducts.find(x => x.id === productId);
   if (!p) return;
+  if ((p.stock || 0) <= 0) { showToast('Sorry, this item is out of stock!'); return; }
   const existing = cart.find(x => x.id === productId);
-  if (existing) existing.qty++;
-  else cart.push({ id: p.id, name: p.name, price: p.price, imageUrl: p.imageUrl, emoji: p.emoji || getCatEmoji(p.category), qty: 1 });
+  if (existing) {
+    // Don't allow adding more than available stock
+    if (existing.qty >= p.stock) { showToast(`Only ${p.stock} in stock!`); return; }
+    existing.qty++;
+  } else {
+    cart.push({ id: p.id, name: p.name, price: p.price, imageUrl: p.imageUrl, emoji: p.emoji || getCatEmoji(p.category), qty: 1 });
+  }
   saveCart();
   showToast(`${p.name} added to cart!`);
 }
@@ -598,6 +617,13 @@ $('step2Next').addEventListener('click', async function () {
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     $('confirmedOrderId').textContent = docRef.id.slice(0, 8).toUpperCase();
+    // Decrement stock for each ordered item
+    const batch = db.batch();
+    cart.forEach(item => {
+      const ref = db.collection('products').doc(item.id);
+      batch.update(ref, { stock: firebase.firestore.FieldValue.increment(-item.qty) });
+    });
+    batch.commit().catch(e => console.warn('Stock update failed:', e));
     cart = []; saveCart(); renderCart();
     $('step2').style.display = 'none';
     $('step3').style.display = 'block';
