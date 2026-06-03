@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Loyy Culture – Streetwear & Lifestyle</title>
+  <title>Loyy Culture – Streetwear &amp; Lifestyle</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@300;400;500;600;700&family=Playfair+Display:ital@1&display=swap" rel="stylesheet">
   <style>
@@ -71,6 +71,17 @@
     .fav-btn.active svg{fill:#e53e3e;stroke:#e53e3e}
     .add-cart-btn{background:var(--accent);color:var(--black);border:none;border-radius:6px;font-size:11px;font-weight:700;padding:6px 12px;cursor:pointer;transition:all 0.2s}
     .add-cart-btn:hover{background:#d9bc87}
+    /* ---- VARIANT CHIPS ---- */
+    .variant-group{margin-bottom:14px}
+    .variant-label{font-size:11px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+    .variant-chips{display:flex;flex-wrap:wrap;gap:8px}
+    .variant-chip{background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--white);padding:6px 16px;border-radius:6px;font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.18s}
+    .variant-chip:hover{border-color:var(--accent);color:var(--accent)}
+    .variant-chip.selected{background:var(--accent);border-color:var(--accent);color:var(--black)}
+    /* ---- CART VARIANT BADGES ---- */
+    .cart-variant-badges{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
+    .cart-variant-badge{background:rgba(200,169,110,0.12);border:1px solid rgba(200,169,110,0.3);color:var(--accent);font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px}
+    /* ---- CART ---- */
     .cart-list{display:flex;flex-direction:column;gap:12px;margin-bottom:20px}
     .cart-item{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;gap:12px;align-items:center}
     .cart-item-img{width:70px;height:70px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#1e1e1e;display:flex;align-items:center;justify-content:center;font-size:28px}
@@ -98,24 +109,20 @@
     .settings-row{display:flex;align-items:center;justify-content:space-between;padding:16px;cursor:pointer;transition:background 0.2s;border-bottom:1px solid var(--border);font-size:15px}
     .settings-row:last-child{border-bottom:none}
     .settings-row:hover{background:rgba(255,255,255,0.04)}
-    /* ---- ORDER HISTORY PAGE ---- */
     .order-history-list{display:flex;flex-direction:column;gap:12px}
-    .order-hist-card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px;cursor:pointer;transition:border-color 0.2s}
+    .order-hist-card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px;cursor:pointer;transition:border-color 0.2s;position:relative}
     .order-hist-card:hover{border-color:rgba(200,169,110,0.3)}
     .order-hist-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
     .order-hist-id{font-size:12px;color:var(--accent);font-weight:700;letter-spacing:1px}
-    .order-hist-date{font-size:11px;color:var(--gray)}
     .order-hist-items{font-size:13px;color:var(--gray);margin-bottom:8px;line-height:1.5}
     .order-hist-footer{display:flex;justify-content:space-between;align-items:center}
     .order-hist-total{font-size:15px;font-weight:700;color:var(--accent)}
-    /* Status badges */
     .status-badge{padding:4px 12px;border-radius:100px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px}
     .status-badge.pending{background:rgba(255,165,0,0.15);color:orange}
     .status-badge.prepare{background:rgba(100,149,237,0.15);color:#6495ed}
     .status-badge.delivery{background:rgba(0,200,100,0.15);color:#00c864}
     .status-badge.approved{background:rgba(0,200,100,0.15);color:#00c864}
     .status-badge.rejected{background:rgba(229,62,62,0.15);color:#e53e3e}
-    /* Order status timeline */
     .order-timeline{display:flex;align-items:center;gap:0;margin:16px 0}
     .tl-step{flex:1;text-align:center;position:relative}
     .tl-step::after{content:'';position:absolute;top:14px;left:50%;width:100%;height:2px;background:var(--border);z-index:0}
@@ -126,7 +133,6 @@
     .tl-label{font-size:10px;color:var(--gray);font-weight:600}
     .tl-label.active{color:var(--accent)}
     .tl-label.done{color:#00c864}
-    /* ---- MODALS ---- */
     .modal-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:16px}
     #orderDetailModal.modal-overlay,#orderHistDetailModal.modal-overlay{z-index:400}
     .modal-overlay.open{display:flex;animation:fadeIn 0.2s ease}
@@ -164,7 +170,6 @@
     .upload-label:hover{border-color:var(--accent);color:var(--accent)}
     .upload-label svg{stroke:currentColor;fill:none;stroke-width:2}
     .upload-preview-name{font-size:11px;color:var(--accent);margin-top:6px}
-    /* ---- ADMIN ---- */
     .admin-overlay{position:fixed;inset:0;z-index:300;background:#0d0d0d;display:none;overflow-y:auto}
     .admin-overlay.open{display:block}
     .admin-container{max-width:800px;margin:0 auto;padding:0 0 40px}
@@ -213,10 +218,10 @@
     .loading-dot:nth-child(2){animation-delay:0.13s}
     .loading-dot:nth-child(3){animation-delay:0.26s}
     @keyframes loadingPulse{0%,100%{transform:scale(0.7);opacity:0.6}50%{transform:scale(1.1);opacity:1}}
-    /* Telegram bubble — always on top */
     .chat-bubble{position:fixed;bottom:calc(var(--bnav-h) + 16px);right:16px;z-index:9999;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#229ed9,#1a8bbf);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(34,158,217,0.4);text-decoration:none;transition:transform 0.2s,box-shadow 0.2s}
     .chat-bubble:hover{transform:scale(1.1);box-shadow:0 6px 28px rgba(34,158,217,0.6)}
     .chat-bubble svg{pointer-events:none}
+    .variant-hint{font-size:11px;color:var(--gray);margin-top:4px}
     @media(min-width:480px){.product-grid{grid-template-columns:repeat(2,1fr)}.hero-title{font-size:60px}}
     @media(min-width:768px){.product-grid{grid-template-columns:repeat(3,1fr)}.page{max-width:700px;margin:0 auto}}
   </style>
@@ -231,7 +236,6 @@
   </div>
   <div class="nav-logo" id="goHome">LOYY<span>CULTURE</span></div>
   <div class="nav-right">
-    <!-- Order History Icon (only shown when logged in) -->
     <button class="nav-icon-btn" id="ordersNavBtn" style="display:none" title="My Orders">
       <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
       <span class="badge" id="ordersBadge">0</span>
@@ -263,7 +267,7 @@
 <main id="mainContent">
   <!-- HOME -->
   <section id="page-home" class="page active">
-    <div class="hero"><div class="hero-text"><p class="hero-sub">NEW COLLECTION 2026</p><h1 class="hero-title">WEAR YOUR<br><em>CULTURE</em></h1><p class="hero-desc">Street wear, accessories & lifestyle pieces curated for those who move with intention.</p><button class="btn-primary" data-nav="products">Shop Now</button></div><div class="hero-img"><div class="hero-placeholder"><span>LC</span></div></div></div>
+    <div class="hero"><div class="hero-text"><p class="hero-sub">NEW COLLECTION 2026</p><h1 class="hero-title">WEAR YOUR<br><em>CULTURE</em></h1><p class="hero-desc">Street wear, accessories &amp; lifestyle pieces curated for those who move with intention.</p><button class="btn-primary" data-nav="products">Shop Now</button></div><div class="hero-img"></div></div>
     <div class="section-header"><h2>Shop By Category</h2></div>
     <div class="category-grid" id="categoryGrid"><button class="cat-chip active" data-cat="all">All</button><button class="cat-chip" data-cat="t-shirts">T-Shirts</button><button class="cat-chip" data-cat="accessories">Accessories</button><button class="cat-chip" data-cat="shoes">Shoes</button><button class="cat-chip" data-cat="clothing">Clothing</button></div>
     <div class="section-header"><h2>Featured Drops</h2><button class="link-btn" data-nav="products">See all</button></div>
@@ -313,10 +317,10 @@
       <p class="settings-email" id="settingsUserEmail">Not logged in</p>
       <div class="settings-actions">
         <button class="btn-primary full" id="loginBtn">Login / Register</button>
-       <button class="btn-outline full" id="goAdminBtn" style="display:none;position:relative">
-  Go to Admin Panel
-  <span class="badge" id="adminOrdersBadge" style="position:absolute;top:4px;right:8px">0</span>
-</button>
+        <button class="btn-outline full" id="goAdminBtn" style="display:none;position:relative">
+          Go to Admin Panel
+          <span class="badge" id="adminOrdersBadge" style="position:absolute;top:4px;right:8px">0</span>
+        </button>
       </div>
     </div>
     <div class="settings-section">
@@ -336,7 +340,7 @@
 <!-- PRODUCT DETAIL MODAL -->
 <div class="modal-overlay" id="productModal"><div class="modal modal-product"><button class="modal-close" data-close="productModal">✕</button><div id="productModalContent"></div></div></div>
 
-<!-- PAYMENT WARNING MODAL (Khmer) -->
+<!-- PAYMENT WARNING MODAL -->
 <div class="modal-overlay" id="paymentWarningModal">
   <div class="modal modal-warning">
     <div class="modal-warning-icon">⚠️</div>
@@ -421,6 +425,18 @@
           <div class="form-group"><label>Category</label><select id="ap_category"><option value="t-shirts">T-Shirts</option><option value="accessories">Accessories</option><option value="shoes">Shoes</option><option value="clothing">Clothing</option></select></div>
         </div>
         <div class="form-group"><label>Description</label><textarea id="ap_desc" rows="3" placeholder="Product description..."></textarea></div>
+        <!-- ---- VARIANT FIELDS ---- -->
+        <div style="background:rgba(200,169,110,0.06);border:1px solid rgba(200,169,110,0.15);border-radius:10px;padding:14px;margin-bottom:14px">
+          <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">📐 Product Variants</div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label>Available Sizes <span style="font-weight:400;color:var(--gray)">(comma-separated, leave blank if no size)</span></label>
+            <input type="text" id="ap_sizes" placeholder="e.g. S, M, L, XL, XXL"/>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>Available Colors <span style="font-weight:400;color:var(--gray)">(comma-separated, leave blank if no color)</span></label>
+            <input type="text" id="ap_colors" placeholder="e.g. Black, White, Red, Navy"/>
+          </div>
+        </div>
         <div class="form-group"><label>Image URL</label><input type="text" id="ap_imageUrl" placeholder="https://..."/></div>
         <div class="form-group"><label>Or Upload Image</label><label class="upload-label"><svg viewBox="0 0 24 24" width="20"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Choose Image<input type="file" id="ap_imageFile" accept="image/*" style="display:none"/></label>
         <div class="upload-progress" id="uploadProgress" style="display:none"><div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div><span id="progressText" style="font-size:12px;color:var(--gray)">Uploading...</span></div>
@@ -453,7 +469,6 @@
 <!-- LOADING -->
 <div id="loadingOverlay" class="loading-overlay"><div class="loading-spinner"><span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span></div><p>Loading…</p></div>
 
-<!-- Telegram bubble — z-index 9999 always on top -->
 <a class="chat-bubble" href="https://t.me/loyyculture7" target="_blank" rel="noopener">
   <svg viewBox="0 0 24 24" width="28" height="28" fill="white"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.32 13.617l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.828.942z"/></svg>
 </a>
