@@ -30,7 +30,6 @@ let currentEditProductId = null;
 let pendingQrFile = null;
 let userOrdersUnsub = null;
 let adminOrdersUnsub = null;
-
 let prevOrderStatuses = {};
 
 // ==================== HELPERS ====================
@@ -56,12 +55,15 @@ function formatDate(ts) {
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+function parseVariants(str) {
+  if (!str) return [];
+  return str.split(',').map(s => s.trim()).filter(Boolean);
+}
 
 // ==================== IN-APP NOTIFICATION BANNER ====================
 function showNotifBanner(icon, title, body, onClick) {
   const old = document.getElementById('notifBanner');
   if (old) old.remove();
-
   const banner = document.createElement('div');
   banner.id = 'notifBanner';
   banner.innerHTML = `
@@ -84,19 +86,10 @@ function showNotifBanner(icon, title, body, onClick) {
   banner.querySelector('.notif-banner-title').style.cssText = 'font-size:13px;font-weight:700;color:var(--accent);margin-bottom:2px';
   banner.querySelector('.notif-banner-body').style.cssText = 'font-size:12px;color:rgba(245,243,239,0.75);line-height:1.4';
   banner.querySelector('.notif-banner-close').style.cssText = 'position:absolute;top:10px;right:10px;background:none;border:none;color:var(--gray);cursor:pointer;font-size:14px;padding:4px';
-
   document.body.appendChild(banner);
   requestAnimationFrame(() => { banner.style.transform = 'translateY(0)'; });
-
-  const dismiss = () => {
-    banner.style.transform = 'translateY(-120%)';
-    setTimeout(() => banner.remove(), 400);
-  };
-  banner.addEventListener('click', (e) => {
-    if (e.target.classList.contains('notif-banner-close')) { dismiss(); return; }
-    dismiss();
-    if (onClick) onClick();
-  });
+  const dismiss = () => { banner.style.transform = 'translateY(-120%)'; setTimeout(() => banner.remove(), 400); };
+  banner.addEventListener('click', (e) => { if (e.target.classList.contains('notif-banner-close')) { dismiss(); return; } dismiss(); if (onClick) onClick(); });
   banner.querySelector('.notif-banner-close').addEventListener('click', e => { e.stopPropagation(); dismiss(); });
   setTimeout(dismiss, 6000);
 }
@@ -110,10 +103,7 @@ function navigateTo(page) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (page === 'cart') renderCart();
   if (page === 'favorites') renderFavorites();
-  if (page === 'orders') {
-    renderOrderHistory();
-    markUserNotifsRead();
-  }
+  if (page === 'orders') { renderOrderHistory(); markUserNotifsRead(); }
 }
 document.querySelectorAll('.bnav-btn').forEach(btn => btn.addEventListener('click', () => navigateTo(btn.dataset.page)));
 $('goHome').addEventListener('click', () => navigateTo('home'));
@@ -148,10 +138,10 @@ function loadProducts() {
 }
 function getDemoProducts() {
   return [
-    { id: 'd1', name: 'LC Street Tee', category: 't-shirts', price: 29.99, description: 'Premium cotton street tee.', emoji: '👕', featured: true, stock: 20 },
+    { id: 'd1', name: 'LC Street Tee', category: 't-shirts', price: 29.99, description: 'Premium cotton street tee.', emoji: '👕', featured: true, stock: 20, sizes: 'S,M,L,XL', colors: 'Black,White' },
     { id: 'd2', name: 'Gold Chain Necklace', category: 'accessories', price: 49.99, description: 'Gold-plated chain.', emoji: '📿', featured: true, stock: 15 },
-    { id: 'd3', name: 'Air Culture Kicks', category: 'shoes', price: 119.99, description: 'Lightweight runners.', emoji: '👟', featured: true, stock: 10 },
-    { id: 'd4', name: 'Oversized Hoodie', category: 'clothing', price: 69.99, description: 'Heavy fleece hoodie.', emoji: '🧥', featured: false, stock: 8 }
+    { id: 'd3', name: 'Air Culture Kicks', category: 'shoes', price: 119.99, description: 'Lightweight runners.', emoji: '👟', featured: true, stock: 10, sizes: '40,41,42,43,44', colors: 'Black,White,Red' },
+    { id: 'd4', name: 'Oversized Hoodie', category: 'clothing', price: 69.99, description: 'Heavy fleece hoodie.', emoji: '🧥', featured: false, stock: 8, sizes: 'S,M,L,XL,XXL', colors: 'Black,Gray,Navy' }
   ];
 }
 function getActiveCat(containerId) { return document.querySelector(`#${containerId} .cat-chip.active`)?.dataset.cat || 'all'; }
@@ -169,16 +159,17 @@ function renderProductGrid(gridId, products) {
       ? `<button class="add-cart-btn" disabled style="background:#444;color:#888;cursor:not-allowed;opacity:0.5;">Out of Stock</button>`
       : `<button class="add-cart-btn">+ Cart</button>`;
     const stockBadge = outOfStock ? `<div style="position:absolute;top:8px;left:8px;background:rgba(229,62,62,0.85);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;letter-spacing:0.5px">OUT OF STOCK</div>` : (p.stock <= 3 ? `<div style="position:absolute;top:8px;left:8px;background:rgba(212,84,26,0.85);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;letter-spacing:0.5px">ONLY ${p.stock} LEFT</div>` : '');
-    return `<div class="product-card${outOfStock ? ' out-of-stock' : ''}" data-id="${p.id}" style="${outOfStock ? 'pointer-events:auto;' : ''}"><div class="product-card-img" style="position:relative;">${img}${stockBadge}</div><div class="product-card-body"><div class="product-card-cat">${p.category}</div><div class="product-card-name" style="${outOfStock ? 'opacity:0.5;' : ''}">${p.name}</div><div class="product-card-bottom"><div class="product-card-price" style="${outOfStock ? 'opacity:0.5;' : ''}">$${Number(p.price).toFixed(2)}</div><div style="display:flex;gap:6px;"><button class="fav-btn ${isFav ? 'active' : ''}" title="Favorite"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>${cartBtn}</div></div></div></div>`;
+    return `<div class="product-card${outOfStock ? ' out-of-stock' : ''}" data-id="${p.id}"><div class="product-card-img" style="position:relative;">${img}${stockBadge}</div><div class="product-card-body"><div class="product-card-cat">${p.category}</div><div class="product-card-name" style="${outOfStock ? 'opacity:0.5;' : ''}">${p.name}</div><div class="product-card-bottom"><div class="product-card-price" style="${outOfStock ? 'opacity:0.5;' : ''}">$${Number(p.price).toFixed(2)}</div><div style="display:flex;gap:6px;"><button class="fav-btn ${isFav ? 'active' : ''}" title="Favorite"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>${cartBtn}</div></div></div></div>`;
   }).join('');
   grid.querySelectorAll('.product-card').forEach(card => {
     const pid = card.dataset.id;
     card.addEventListener('click', e => { if (!e.target.closest('.fav-btn') && !e.target.closest('.add-cart-btn')) showProductDetail(pid); });
     card.querySelector('.fav-btn')?.addEventListener('click', e => { e.stopPropagation(); toggleFav(pid); });
     const addBtn = card.querySelector('.add-cart-btn');
-    if (addBtn && !addBtn.disabled) addBtn.addEventListener('click', e => { e.stopPropagation(); addToCart(pid); });
+    if (addBtn && !addBtn.disabled) addBtn.addEventListener('click', e => { e.stopPropagation(); showProductDetail(pid); });
   });
 }
+
 function showProductDetail(id) {
   const p = allProducts.find(x => x.id === id);
   if (!p) return;
@@ -188,45 +179,88 @@ function showProductDetail(id) {
   const stockInfo = outOfStock
     ? `<div style="background:rgba(229,62,62,0.12);border:1px solid #e53e3e;border-radius:8px;padding:8px 14px;margin-bottom:14px;font-size:12px;font-weight:700;color:#e53e3e;text-align:center;">❌ Out of Stock</div>`
     : (p.stock <= 3 ? `<div style="background:rgba(212,84,26,0.12);border:1px solid var(--accent2);border-radius:8px;padding:8px 14px;margin-bottom:14px;font-size:12px;font-weight:700;color:var(--accent2);text-align:center;">⚠️ Only ${p.stock} left!</div>` : '');
+
+  const sizes = parseVariants(p.sizes);
+  const colors = parseVariants(p.colors);
+  const sizeSel = sizes.length ? `<div class="variant-group"><div class="variant-label">Size</div><div class="variant-chips" id="pd-sizes">${sizes.map(s => `<button class="variant-chip" data-val="${s}">${s}</button>`).join('')}</div></div>` : '';
+  const colorSel = colors.length ? `<div class="variant-group"><div class="variant-label">Color</div><div class="variant-chips" id="pd-colors">${colors.map(c => `<button class="variant-chip" data-val="${c}">${c}</button>`).join('')}</div></div>` : '';
+
   const addCartBtn = outOfStock
     ? `<button class="btn-primary" disabled style="flex:1;opacity:0.4;cursor:not-allowed;">Out of Stock</button>`
     : `<button class="btn-primary" id="pdAddCart">Add to Cart</button>`;
-  $('productModalContent').innerHTML = `<div class="product-detail-img">${img}</div><div class="product-detail-cat">${p.category}</div><div class="product-detail-name">${p.name}</div><div class="product-detail-price">$${Number(p.price).toFixed(2)}</div>${stockInfo}<div class="product-detail-desc">${p.description || ''}</div><div class="product-detail-actions">${addCartBtn}<button class="fav-btn ${isFav ? 'active' : ''}" id="pdFav" style="padding:12px;border:1px solid var(--border);border-radius:8px"><svg viewBox="0 0 24 24" width="22"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button></div>`;
-  if (!outOfStock) $('pdAddCart').onclick = () => { addToCart(p.id); closeModal('productModal'); };
+
+  $('productModalContent').innerHTML = `<div class="product-detail-img">${img}</div><div class="product-detail-cat">${p.category}</div><div class="product-detail-name">${p.name}</div><div class="product-detail-price">$${Number(p.price).toFixed(2)}</div>${stockInfo}${sizeSel}${colorSel}<div class="product-detail-desc">${p.description || ''}</div><div class="product-detail-actions">${addCartBtn}<button class="fav-btn ${isFav ? 'active' : ''}" id="pdFav" style="padding:12px;border:1px solid var(--border);border-radius:8px"><svg viewBox="0 0 24 24" width="22"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button></div>`;
+
+  // Variant chip selection logic
+  document.querySelectorAll('#pd-sizes .variant-chip, #pd-colors .variant-chip').forEach(chip => {
+    chip.addEventListener('click', function() {
+      this.closest('.variant-chips').querySelectorAll('.variant-chip').forEach(c => c.classList.remove('selected'));
+      this.classList.add('selected');
+    });
+  });
+
+  if (!outOfStock) {
+    $('pdAddCart').onclick = () => {
+      const selectedSize = document.querySelector('#pd-sizes .variant-chip.selected')?.dataset.val || null;
+      const selectedColor = document.querySelector('#pd-colors .variant-chip.selected')?.dataset.val || null;
+      if (sizes.length && !selectedSize) { showToast('Please select a size'); return; }
+      if (colors.length && !selectedColor) { showToast('Please select a color'); return; }
+      addToCartWithVariants(p.id, selectedSize, selectedColor);
+      closeModal('productModal');
+    };
+  }
   $('pdFav').onclick = () => toggleFav(p.id);
   openModal('productModal');
 }
 
 // ==================== CART ====================
-function addToCart(productId) {
+function addToCartWithVariants(productId, size, color) {
   const p = allProducts.find(x => x.id === productId);
   if (!p) return;
   if ((p.stock || 0) <= 0) { showToast('Sorry, this item is out of stock!'); return; }
-  const existing = cart.find(x => x.id === productId);
+  // Key includes size+color so same product with different variants = separate line items
+  const key = `${productId}__${size || ''}__${color || ''}`;
+  const existing = cart.find(x => x.key === key);
   if (existing) {
-    // Don't allow adding more than available stock
     if (existing.qty >= p.stock) { showToast(`Only ${p.stock} in stock!`); return; }
     existing.qty++;
   } else {
-    cart.push({ id: p.id, name: p.name, price: p.price, imageUrl: p.imageUrl, emoji: p.emoji || getCatEmoji(p.category), qty: 1 });
+    cart.push({ key, id: p.id, name: p.name, price: p.price, imageUrl: p.imageUrl, emoji: p.emoji || getCatEmoji(p.category), qty: 1, size: size || null, color: color || null });
   }
   saveCart();
-  showToast(`${p.name} added to cart!`);
+  const variantLabel = [size, color].filter(Boolean).join(' / ');
+  showToast(`${p.name}${variantLabel ? ' (' + variantLabel + ')' : ''} added to cart!`);
 }
+
+function addToCart(productId) {
+  const p = allProducts.find(x => x.id === productId);
+  if (!p) return;
+  const sizes = parseVariants(p.sizes);
+  const colors = parseVariants(p.colors);
+  if (sizes.length || colors.length) { showProductDetail(productId); return; }
+  addToCartWithVariants(productId, null, null);
+}
+
 function renderCart() {
   const list = $('cartItems'), summary = $('cartSummary'), empty = $('cartEmpty');
   if (!cart.length) { list.innerHTML = ''; summary.style.display = 'none'; empty.style.display = 'flex'; return; }
   empty.style.display = 'none'; summary.style.display = 'block';
-  list.innerHTML = cart.map(item => `<div class="cart-item" data-id="${item.id}"><div class="cart-item-img">${item.imageUrl ? `<img src="${item.imageUrl}"/>` : item.emoji}</div><div class="cart-item-info"><div class="cart-item-name">${item.name}</div><div class="cart-item-price">$${(item.price * item.qty).toFixed(2)}</div></div><div class="cart-item-actions"><div class="qty-controls"><button class="qty-btn qty-minus" data-id="${item.id}">−</button><span class="qty-num">${item.qty}</span><button class="qty-btn qty-plus" data-id="${item.id}">+</button></div><button class="remove-btn" data-id="${item.id}">Remove</button></div></div>`).join('');
-  list.querySelectorAll('.qty-plus').forEach(b => b.onclick = () => updateQty(b.dataset.id, 1));
-  list.querySelectorAll('.qty-minus').forEach(b => b.onclick = () => updateQty(b.dataset.id, -1));
-  list.querySelectorAll('.remove-btn').forEach(b => b.onclick = () => removeFromCart(b.dataset.id));
+  list.innerHTML = cart.map(item => {
+    const variantBadges = [
+      item.size ? `<span class="cart-variant-badge">Size: ${item.size}</span>` : '',
+      item.color ? `<span class="cart-variant-badge">Color: ${item.color}</span>` : ''
+    ].filter(Boolean).join('');
+    return `<div class="cart-item" data-key="${item.key || item.id}"><div class="cart-item-img">${item.imageUrl ? `<img src="${item.imageUrl}"/>` : item.emoji}</div><div class="cart-item-info"><div class="cart-item-name">${item.name}</div>${variantBadges ? `<div class="cart-variant-badges">${variantBadges}</div>` : ''}<div class="cart-item-price">$${(item.price * item.qty).toFixed(2)}</div></div><div class="cart-item-actions"><div class="qty-controls"><button class="qty-btn qty-minus" data-key="${item.key || item.id}">−</button><span class="qty-num">${item.qty}</span><button class="qty-btn qty-plus" data-key="${item.key || item.id}">+</button></div><button class="remove-btn" data-key="${item.key || item.id}">Remove</button></div></div>`;
+  }).join('');
+  list.querySelectorAll('.qty-plus').forEach(b => b.onclick = () => updateQty(b.dataset.key, 1));
+  list.querySelectorAll('.qty-minus').forEach(b => b.onclick = () => updateQty(b.dataset.key, -1));
+  list.querySelectorAll('.remove-btn').forEach(b => b.onclick = () => removeFromCart(b.dataset.key));
   const sub = cart.reduce((s, i) => s + i.price * i.qty, 0);
   $('cartSubtotal').textContent = `$${sub.toFixed(2)}`;
   $('cartTotal').textContent = `$${(sub + DELIVERY_FEE).toFixed(2)}`;
 }
-function updateQty(id, delta) { const idx = cart.findIndex(x => x.id === id); if (idx === -1) return; cart[idx].qty += delta; if (cart[idx].qty <= 0) cart.splice(idx, 1); saveCart(); renderCart(); }
-function removeFromCart(id) { cart = cart.filter(x => x.id !== id); saveCart(); renderCart(); }
+function updateQty(key, delta) { const idx = cart.findIndex(x => (x.key || x.id) === key); if (idx === -1) return; cart[idx].qty += delta; if (cart[idx].qty <= 0) cart.splice(idx, 1); saveCart(); renderCart(); }
+function removeFromCart(key) { cart = cart.filter(x => (x.key || x.id) !== key); saveCart(); renderCart(); }
 
 // ==================== FAVORITES ====================
 function toggleFav(productId) {
@@ -319,7 +353,6 @@ auth.onAuthStateChanged(user => {
 $('goAdminBtn').addEventListener('click', () => {
   if (isAdmin) {
     $('adminPanel').classList.add('open');
-    // FIX: safe badge clear — element may not exist yet
     const ab = $('adminOrdersBadge');
     if (ab) { ab.textContent = '0'; ab.classList.remove('visible'); }
   } else showToast('Admin access only');
@@ -330,171 +363,87 @@ $('closeAdmin').addEventListener('click', () => $('adminPanel').classList.remove
 let userOrders = [];
 let isFirstUserOrderLoad = true;
 
-// FIX: robust listener with index-error fallback so orders always load
 function listenUserOrders(uid) {
   if (userOrdersUnsub) { userOrdersUnsub(); userOrdersUnsub = null; }
   isFirstUserOrderLoad = true;
-
   function applySnapshot(docs) {
     const newOrders = docs.map(d => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => {
-        const ta = a.createdAt?.toMillis?.() || 0;
-        const tb = b.createdAt?.toMillis?.() || 0;
-        return tb - ta;
-      });
-
+      .sort((a, b) => { const ta = a.createdAt?.toMillis?.() || 0; const tb = b.createdAt?.toMillis?.() || 0; return tb - ta; });
     if (!isFirstUserOrderLoad) {
       newOrders.forEach(order => {
         const prev = prevOrderStatuses[order.id];
         const curr = order.status;
-        if (prev !== undefined && prev !== curr) {
-          handleUserOrderStatusChange(order, prev, curr);
-        }
+        if (prev !== undefined && prev !== curr) handleUserOrderStatusChange(order, prev, curr);
       });
     }
-
     newOrders.forEach(o => { prevOrderStatuses[o.id] = o.status; });
     userOrders = newOrders;
     isFirstUserOrderLoad = false;
-
-    // FIX: badge counts orders with notifUnread flag OR new pending orders user hasn't seen
     const unread = userOrders.filter(o => o.notifUnread).length;
     $('ordersBadge').textContent = unread;
     $('ordersBadge').classList.toggle('visible', unread > 0);
-
     if ($('page-orders').classList.contains('active')) renderOrderHistory();
   }
-
-  // Try with orderBy first (needs Firestore composite index)
-  userOrdersUnsub = db.collection('orders')
-    .where('userId', '==', uid)
-    .orderBy('createdAt', 'desc')
-    .onSnapshot(
-      snap => applySnapshot(snap.docs),
-      err => {
-        // FIX: if index missing, fall back to simple query and sort client-side
-        console.warn('Order query needs index, falling back:', err.message);
-        console.warn('👉 Create index here:', err.message.match(/https:\/\/\S+/)?.[0] || 'Firebase Console → Indexes');
-        userOrdersUnsub = db.collection('orders')
-          .where('userId', '==', uid)
-          .onSnapshot(
-            snap => applySnapshot(snap.docs),
-            err2 => console.error('Orders listener failed completely:', err2)
-          );
-      }
-    );
+  userOrdersUnsub = db.collection('orders').where('userId', '==', uid).orderBy('createdAt', 'desc')
+    .onSnapshot(snap => applySnapshot(snap.docs), err => {
+      console.warn('Order query needs index, falling back:', err.message);
+      userOrdersUnsub = db.collection('orders').where('userId', '==', uid)
+        .onSnapshot(snap => applySnapshot(snap.docs), err2 => console.error('Orders listener failed:', err2));
+    });
 }
 
 function handleUserOrderStatusChange(order, prevStatus, newStatus) {
   const shortId = order.id.slice(0, 8).toUpperCase();
-  if (newStatus === 'prepare') {
-    showNotifBanner('📦', 'Order Being Prepared!',
-      `Order #${shortId} has been approved and is being prepared for you.`,
-      () => navigateTo('orders')
-    );
-  } else if (newStatus === 'delivery') {
-    showNotifBanner('🚚', 'Order Out for Delivery!',
-      `Order #${shortId} is on its way to you. Get ready!`,
-      () => navigateTo('orders')
-    );
-  } else if (newStatus === 'rejected') {
-    showNotifBanner('❌', 'Order Rejected',
-      `Order #${shortId} was rejected. Please contact us via Telegram.`,
-      () => navigateTo('orders')
-    );
-  }
+  if (newStatus === 'prepare') showNotifBanner('📦', 'Order Being Prepared!', `Order #${shortId} has been approved and is being prepared for you.`, () => navigateTo('orders'));
+  else if (newStatus === 'delivery') showNotifBanner('🚚', 'Order Out for Delivery!', `Order #${shortId} is on its way to you. Get ready!`, () => navigateTo('orders'));
+  else if (newStatus === 'rejected') showNotifBanner('❌', 'Order Rejected', `Order #${shortId} was rejected. Please contact us via Telegram.`, () => navigateTo('orders'));
 }
 
 function markUserNotifsRead() {
   if (!currentUser) return;
-  userOrders.forEach(o => {
-    if (o.notifUnread) {
-      db.collection('orders').doc(o.id).update({ notifUnread: false }).catch(() => {});
-    }
-  });
+  userOrders.forEach(o => { if (o.notifUnread) db.collection('orders').doc(o.id).update({ notifUnread: false }).catch(() => {}); });
   $('ordersBadge').textContent = '0';
   $('ordersBadge').classList.remove('visible');
 }
 
 // ==================== ADMIN ORDER LISTENER ====================
 let isFirstAdminLoad = true;
-
 function listenAdminOrders() {
   if (adminOrdersUnsub) { adminOrdersUnsub(); adminOrdersUnsub = null; }
   isFirstAdminLoad = true;
-
-  adminOrdersUnsub = db.collection('orders')
-    .orderBy('createdAt', 'desc')
-    .onSnapshot(snap => {
-      const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const pendingCount = orders.filter(o => o.status === 'pending').length;
-
-      // FIX: safe badge update — element might not exist if HTML not updated yet
-      const badge = $('adminOrdersBadge');
-      if (badge) {
-        badge.textContent = pendingCount;
-        badge.classList.toggle('visible', pendingCount > 0);
-      }
-
-      if (!isFirstAdminLoad) {
-        snap.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const o = { id: change.doc.id, ...change.doc.data() };
-            if (o.status === 'pending') {
-              showNotifBanner('🛒', 'New Order Received!',
-                `${o.customer?.name || 'A customer'} placed an order — $${Number(o.total).toFixed(2)}`,
-                () => { $('adminPanel').classList.add('open'); loadAdminOrders(); }
-              );
-            }
-          }
-        });
-      }
-      isFirstAdminLoad = false;
-
-      if ($('atab-orders')?.classList.contains('active') && $('adminPanel').classList.contains('open')) {
-        renderAdminOrdersList(orders);
-      }
-    }, err => console.warn('Admin orders listener error:', err));
+  adminOrdersUnsub = db.collection('orders').orderBy('createdAt', 'desc').onSnapshot(snap => {
+    const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const pendingCount = orders.filter(o => o.status === 'pending').length;
+    const badge = $('adminOrdersBadge');
+    if (badge) { badge.textContent = pendingCount; badge.classList.toggle('visible', pendingCount > 0); }
+    if (!isFirstAdminLoad) {
+      snap.docChanges().forEach(change => {
+        if (change.type === 'added') {
+          const o = { id: change.doc.id, ...change.doc.data() };
+          if (o.status === 'pending') showNotifBanner('🛒', 'New Order Received!', `${o.customer?.name || 'A customer'} placed an order — $${Number(o.total).toFixed(2)}`, () => { $('adminPanel').classList.add('open'); loadAdminOrders(); });
+        }
+      });
+    }
+    isFirstAdminLoad = false;
+    if ($('atab-orders')?.classList.contains('active') && $('adminPanel').classList.contains('open')) renderAdminOrdersList(orders);
+  }, err => console.warn('Admin orders listener error:', err));
 }
 
 // ==================== ORDER HISTORY (User) ====================
 function renderOrderHistory() {
-  if (!currentUser) {
-    $('orderHistoryList').innerHTML = '';
-    $('ordersEmpty').style.display = 'flex';
-    $('ordersEmpty').querySelector('p').textContent = 'Please login to see your orders';
-    return;
-  }
-  if (!userOrders.length) {
-    $('orderHistoryList').innerHTML = '';
-    $('ordersEmpty').style.display = 'flex';
-    $('ordersEmpty').querySelector('p').textContent = 'No orders yet';
-    return;
-  }
+  if (!currentUser) { $('orderHistoryList').innerHTML = ''; $('ordersEmpty').style.display = 'flex'; $('ordersEmpty').querySelector('p').textContent = 'Please login to see your orders'; return; }
+  if (!userOrders.length) { $('orderHistoryList').innerHTML = ''; $('ordersEmpty').style.display = 'flex'; $('ordersEmpty').querySelector('p').textContent = 'No orders yet'; return; }
   $('ordersEmpty').style.display = 'none';
   $('orderHistoryList').innerHTML = userOrders.map(o => {
     const statusLabel = { pending: 'Pending', prepare: 'Preparing', delivery: 'Delivery', rejected: 'Rejected' }[o.status] || o.status;
     const itemsSummary = (o.items || []).map(i => `${i.name} ×${i.qty}`).join(', ');
     const isUnread = o.notifUnread;
-    return `<div class="order-hist-card${isUnread ? ' order-unread' : ''}" data-id="${o.id}">
-      ${isUnread ? '<div class="order-unread-dot"></div>' : ''}
-      <div class="order-hist-header">
-        <span class="order-hist-id">#${o.id.slice(0, 8).toUpperCase()}</span>
-        <span class="status-badge ${o.status}">${statusLabel}</span>
-      </div>
-      <div class="order-hist-items">${itemsSummary}</div>
-      <div class="order-hist-footer">
-        <span class="order-hist-total">$${Number(o.total).toFixed(2)}</span>
-        <span style="font-size:11px;color:var(--gray)">${formatDate(o.createdAt)}</span>
-      </div>
-    </div>`;
+    return `<div class="order-hist-card${isUnread ? ' order-unread' : ''}" data-id="${o.id}">${isUnread ? '<div class="order-unread-dot"></div>' : ''}<div class="order-hist-header"><span class="order-hist-id">#${o.id.slice(0, 8).toUpperCase()}</span><span class="status-badge ${o.status}">${statusLabel}</span></div><div class="order-hist-items">${itemsSummary}</div><div class="order-hist-footer"><span class="order-hist-total">$${Number(o.total).toFixed(2)}</span><span style="font-size:11px;color:var(--gray)">${formatDate(o.createdAt)}</span></div></div>`;
   }).join('');
   document.querySelectorAll('.order-hist-card').forEach(card => {
     card.addEventListener('click', () => {
       const oid = card.dataset.id;
-      if (card.classList.contains('order-unread')) {
-        db.collection('orders').doc(oid).update({ notifUnread: false }).catch(() => {});
-      }
+      if (card.classList.contains('order-unread')) db.collection('orders').doc(oid).update({ notifUnread: false }).catch(() => {});
       showOrderHistDetail(oid);
     });
   });
@@ -503,60 +452,19 @@ function renderOrderHistory() {
 function showOrderHistDetail(orderId) {
   const o = userOrders.find(x => x.id === orderId);
   if (!o) return;
-  const steps = [
-    { key: 'pending', label: 'Pending', icon: '📋' },
-    { key: 'prepare', label: 'Preparing', icon: '📦' },
-    { key: 'delivery', label: 'Delivery', icon: '🚚' },
-  ];
+  const steps = [{ key: 'pending', label: 'Pending', icon: '📋' }, { key: 'prepare', label: 'Preparing', icon: '📦' }, { key: 'delivery', label: 'Delivery', icon: '🚚' }];
   const statusOrder = ['pending', 'prepare', 'delivery'];
   const currentIdx = statusOrder.indexOf(o.status);
-  const timelineHtml = `<div class="order-timeline">
-    ${steps.map((s, i) => {
-      const cls = i < currentIdx ? 'done' : (i === currentIdx ? 'active' : '');
-      const icon = i < currentIdx ? '✓' : s.icon;
-      return `<div class="tl-step"><div class="tl-dot ${cls}">${icon}</div><div class="tl-label ${cls}">${s.icon} ${s.label}</div></div>`;
-    }).join('')}
-  </div>`;
-
-  const rejectedBanner = o.status === 'rejected'
-    ? `<div style="background:rgba(229,62,62,0.1);border:1px solid #e53e3e;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#e53e3e;text-align:center">❌ Order was rejected. Please contact support via Telegram.</div>`
-    : '';
-
-  $('orderHistDetailContent').innerHTML = `
-    ${rejectedBanner}
-    ${o.status !== 'rejected' ? timelineHtml : ''}
-    <div class="order-detail-section">
-      <h4 style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--accent)">Order Info</h4>
-      <div class="order-detail-row"><span>Order ID</span><span>#${o.id.slice(0, 8).toUpperCase()}</span></div>
-      <div class="order-detail-row"><span>Status</span><span class="status-badge ${o.status}">${o.status}</span></div>
-      <div class="order-detail-row"><span>Date</span><span>${formatDate(o.createdAt)}</span></div>
-      <div class="order-detail-row"><span>Subtotal</span><span>$${(Number(o.total) - DELIVERY_FEE).toFixed(2)}</span></div>
-      <div class="order-detail-row"><span>Delivery</span><span>$${DELIVERY_FEE.toFixed(2)}</span></div>
-      <div class="order-detail-row"><span style="font-weight:700">Total</span><span style="color:var(--accent);font-weight:700">$${Number(o.total).toFixed(2)}</span></div>
-    </div>
-    <div class="order-detail-section">
-      <h4 style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--accent)">Delivery To</h4>
-      <div class="order-detail-row"><span>Name</span><span>${o.customer?.name || ''}</span></div>
-      <div class="order-detail-row"><span>Phone</span><span>${o.customer?.phone || ''}</span></div>
-      <div class="order-detail-row"><span>Address</span><span>${o.customer?.address || ''}</span></div>
-    </div>
-    <div class="order-detail-section">
-      <h4 style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--accent)">Items</h4>
-      ${(o.items || []).map(i => `<div class="order-detail-row"><span>${i.name} ×${i.qty}</span><span>$${(i.price * i.qty).toFixed(2)}</span></div>`).join('')}
-    </div>
-    ${o.screenshotUrl ? `<div class="order-detail-section"><h4 style="font-size:14px;font-weight:700;margin-bottom:10px">Payment Screenshot</h4><img src="${o.screenshotUrl}" class="order-ss-img"/></div>` : ''}
-  `;
+  const timelineHtml = `<div class="order-timeline">${steps.map((s, i) => { const cls = i < currentIdx ? 'done' : (i === currentIdx ? 'active' : ''); const icon = i < currentIdx ? '✓' : s.icon; return `<div class="tl-step"><div class="tl-dot ${cls}">${icon}</div><div class="tl-label ${cls}">${s.icon} ${s.label}</div></div>`; }).join('')}</div>`;
+  const rejectedBanner = o.status === 'rejected' ? `<div style="background:rgba(229,62,62,0.1);border:1px solid #e53e3e;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#e53e3e;text-align:center">❌ Order was rejected. Please contact support via Telegram.</div>` : '';
+  $('orderHistDetailContent').innerHTML = `${rejectedBanner}${o.status !== 'rejected' ? timelineHtml : ''}<div class="order-detail-section"><h4 style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--accent)">Order Info</h4><div class="order-detail-row"><span>Order ID</span><span>#${o.id.slice(0, 8).toUpperCase()}</span></div><div class="order-detail-row"><span>Status</span><span class="status-badge ${o.status}">${o.status}</span></div><div class="order-detail-row"><span>Date</span><span>${formatDate(o.createdAt)}</span></div><div class="order-detail-row"><span>Subtotal</span><span>$${(Number(o.total) - DELIVERY_FEE).toFixed(2)}</span></div><div class="order-detail-row"><span>Delivery</span><span>$${DELIVERY_FEE.toFixed(2)}</span></div><div class="order-detail-row"><span style="font-weight:700">Total</span><span style="color:var(--accent);font-weight:700">$${Number(o.total).toFixed(2)}</span></div></div><div class="order-detail-section"><h4 style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--accent)">Delivery To</h4><div class="order-detail-row"><span>Name</span><span>${o.customer?.name || ''}</span></div><div class="order-detail-row"><span>Phone</span><span>${o.customer?.phone || ''}</span></div><div class="order-detail-row"><span>Address</span><span>${o.customer?.address || ''}</span></div></div><div class="order-detail-section"><h4 style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--accent)">Items</h4>${(o.items || []).map(i => `<div class="order-detail-row"><span>${i.name} ×${i.qty}${i.size ? ' · ' + i.size : ''}${i.color ? ' · ' + i.color : ''}</span><span>$${(i.price * i.qty).toFixed(2)}</span></div>`).join('')}</div>${o.screenshotUrl ? `<div class="order-detail-section"><h4 style="font-size:14px;font-weight:700;margin-bottom:10px">Payment Screenshot</h4><img src="${o.screenshotUrl}" class="order-ss-img"/></div>` : ''}`;
   openModal('orderHistDetailModal');
 }
 
 // ==================== CHECKOUT ====================
 $('checkoutBtn').addEventListener('click', () => {
   if (!cart.length) { showToast('Cart is empty'); return; }
-  if (!currentUser) {
-    showToast('Please login to place an order');
-    openModal('loginModal');
-    return;
-  }
+  if (!currentUser) { showToast('Please login to place an order'); openModal('loginModal'); return; }
   $('step1').style.display = 'block';
   $('step2').style.display = 'none';
   $('step3').style.display = 'none';
@@ -605,28 +513,17 @@ $('step2Next').addEventListener('click', async function () {
     const total = cart.reduce((s, i) => s + i.price * i.qty, 0) + DELIVERY_FEE;
     const docRef = await db.collection('orders').add({
       customer: checkoutCustomer,
-      items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, qty: i.qty })),
-      total: total,
-      deliveryFee: DELIVERY_FEE,
-      status: 'pending',
-      // FIX: set true so the new order shows with badge/unread indicator on Orders page
-      notifUnread: true,
-      screenshotUrl: screenshotUrl,
-      userId: currentUser.uid,
-      userEmail: currentUser.email,
+      items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, qty: i.qty, size: i.size || null, color: i.color || null })),
+      total, deliveryFee: DELIVERY_FEE, status: 'pending', notifUnread: true,
+      screenshotUrl, userId: currentUser.uid, userEmail: currentUser.email,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     $('confirmedOrderId').textContent = docRef.id.slice(0, 8).toUpperCase();
-    // Decrement stock for each ordered item
     const batch = db.batch();
-    cart.forEach(item => {
-      const ref = db.collection('products').doc(item.id);
-      batch.update(ref, { stock: firebase.firestore.FieldValue.increment(-item.qty) });
-    });
+    cart.forEach(item => { const ref = db.collection('products').doc(item.id); batch.update(ref, { stock: firebase.firestore.FieldValue.increment(-item.qty) }); });
     batch.commit().catch(e => console.warn('Stock update failed:', e));
     cart = []; saveCart(); renderCart();
-    $('step2').style.display = 'none';
-    $('step3').style.display = 'block';
+    $('step2').style.display = 'none'; $('step3').style.display = 'block';
     showToast('Order placed! 🎉');
   } catch (err) { console.error(err); showToast('Error placing order'); }
   finally { btn.textContent = 'Submit Order'; btn.disabled = false; }
@@ -660,19 +557,7 @@ function renderAdminOrdersList(orders) {
   if (!orders.length) { container.innerHTML = '<p style="color:var(--gray);padding:20px;text-align:center">No orders yet.</p>'; return; }
   container.innerHTML = orders.map(o => {
     const actionBtns = getAdminActionBtns(o);
-    return `<div class="admin-order-card">
-      <div class="order-card-header">
-        <span class="order-id">#${o.id.slice(0, 8).toUpperCase()}</span>
-        <span class="order-status ${o.status}">${o.status}</span>
-      </div>
-      <div class="order-card-customer">${o.customer?.name || 'Unknown'} · ${o.customer?.phone || ''}</div>
-      <div style="font-size:12px;color:var(--gray);margin-bottom:6px">${o.userEmail || ''}</div>
-      <div class="order-card-amount">$${Number(o.total).toFixed(2)}</div>
-      <div class="order-card-actions">
-        <button class="view-ss-btn" data-id="${o.id}">View Details</button>
-        ${actionBtns}
-      </div>
-    </div>`;
+    return `<div class="admin-order-card"><div class="order-card-header"><span class="order-id">#${o.id.slice(0, 8).toUpperCase()}</span><span class="order-status ${o.status}">${o.status}</span></div><div class="order-card-customer">${o.customer?.name || 'Unknown'} · ${o.customer?.phone || ''}</div><div style="font-size:12px;color:var(--gray);margin-bottom:6px">${o.userEmail || ''}</div><div class="order-card-amount">$${Number(o.total).toFixed(2)}</div><div class="order-card-actions"><button class="view-ss-btn" data-id="${o.id}">View Details</button>${actionBtns}</div></div>`;
   }).join('');
   container.querySelectorAll('.view-ss-btn').forEach(b => b.onclick = () => showOrderDetail(b.dataset.id));
   container.querySelectorAll('.approve-btn').forEach(b => b.onclick = () => updateOrderStatus(b.dataset.id, 'prepare'));
@@ -688,14 +573,9 @@ function getAdminActionBtns(o) {
 
 function updateOrderStatus(id, status) {
   const updateData = { status };
-  if (['prepare', 'delivery', 'rejected'].includes(status)) {
-    updateData.notifUnread = true;
-  }
+  if (['prepare', 'delivery', 'rejected'].includes(status)) updateData.notifUnread = true;
   db.collection('orders').doc(id).update(updateData)
-    .then(() => {
-      showToast(`Order moved to: ${status}!`);
-      loadAdminOrders();
-    })
+    .then(() => { showToast(`Order moved to: ${status}!`); loadAdminOrders(); })
     .catch(() => showToast('Error updating'));
 }
 
@@ -704,33 +584,7 @@ function showOrderDetail(id) {
     if (!doc.exists) return;
     const o = { id: doc.id, ...doc.data() };
     const actionBtns = getAdminActionBtns(o);
-    $('orderDetailContent').innerHTML = `
-      <div class="order-detail-section">
-        <h4 style="margin-bottom:10px;color:var(--accent)">Order Info</h4>
-        <div class="order-detail-row"><span>Order ID</span><span>#${o.id.slice(0, 8).toUpperCase()}</span></div>
-        <div class="order-detail-row"><span>Status</span><span class="order-status ${o.status}">${o.status}</span></div>
-        <div class="order-detail-row"><span>Total</span><span style="color:var(--accent);font-weight:700">$${Number(o.total).toFixed(2)}</span></div>
-      </div>
-      <div class="order-detail-section">
-        <h4 style="margin-bottom:10px;color:var(--accent)">Customer</h4>
-        <div class="order-detail-row"><span>Name</span><span>${o.customer?.name || ''}</span></div>
-        <div class="order-detail-row"><span>Phone</span><span>${o.customer?.phone || ''}</span></div>
-        <div class="order-detail-row"><span>Address</span><span>${o.customer?.address || ''}</span></div>
-        <div class="order-detail-row"><span>Email</span><span>${o.userEmail || ''}</span></div>
-      </div>
-      <div class="order-detail-section">
-        <h4 style="margin-bottom:10px;color:var(--accent)">Items</h4>
-        ${(o.items || []).map(i => `<div class="order-detail-row"><span>${i.name} ×${i.qty}</span><span>$${(i.price * i.qty).toFixed(2)}</span></div>`).join('')}
-        <div class="order-detail-row"><span>Delivery Fee</span><span>$${DELIVERY_FEE.toFixed(2)}</span></div>
-      </div>
-      ${o.screenshotUrl ? `<div class="order-detail-section"><h4 style="margin-bottom:8px">Payment Screenshot</h4><img src="${o.screenshotUrl}" class="order-ss-img"/></div>` : '<p style="color:var(--gray);font-size:13px">No screenshot uploaded</p>'}
-      ${actionBtns ? `<div style="display:flex;gap:10px;margin-top:16px">${
-        o.status === 'pending'
-          ? `<button class="approve-btn" id="detailApprove" style="flex:1">📦 Prepare</button><button class="reject-btn" id="detailReject" style="flex:1">✗ Reject</button>`
-          : o.status === 'prepare'
-          ? `<button class="delivery-btn" id="detailDelivery" style="flex:1">🚚 Send Delivery</button>`
-          : ''
-      }</div>` : ''}`;
+    $('orderDetailContent').innerHTML = `<div class="order-detail-section"><h4 style="margin-bottom:10px;color:var(--accent)">Order Info</h4><div class="order-detail-row"><span>Order ID</span><span>#${o.id.slice(0, 8).toUpperCase()}</span></div><div class="order-detail-row"><span>Status</span><span class="order-status ${o.status}">${o.status}</span></div><div class="order-detail-row"><span>Total</span><span style="color:var(--accent);font-weight:700">$${Number(o.total).toFixed(2)}</span></div></div><div class="order-detail-section"><h4 style="margin-bottom:10px;color:var(--accent)">Customer</h4><div class="order-detail-row"><span>Name</span><span>${o.customer?.name || ''}</span></div><div class="order-detail-row"><span>Phone</span><span>${o.customer?.phone || ''}</span></div><div class="order-detail-row"><span>Address</span><span>${o.customer?.address || ''}</span></div><div class="order-detail-row"><span>Email</span><span>${o.userEmail || ''}</span></div></div><div class="order-detail-section"><h4 style="margin-bottom:10px;color:var(--accent)">Items</h4>${(o.items || []).map(i => `<div class="order-detail-row"><span>${i.name} ×${i.qty}${i.size ? ' · Size: ' + i.size : ''}${i.color ? ' · Color: ' + i.color : ''}</span><span>$${(i.price * i.qty).toFixed(2)}</span></div>`).join('')}<div class="order-detail-row"><span>Delivery Fee</span><span>$${DELIVERY_FEE.toFixed(2)}</span></div></div>${o.screenshotUrl ? `<div class="order-detail-section"><h4 style="margin-bottom:8px">Payment Screenshot</h4><img src="${o.screenshotUrl}" class="order-ss-img"/></div>` : '<p style="color:var(--gray);font-size:13px">No screenshot uploaded</p>'}${actionBtns ? `<div style="display:flex;gap:10px;margin-top:16px">${o.status === 'pending' ? `<button class="approve-btn" id="detailApprove" style="flex:1">📦 Prepare</button><button class="reject-btn" id="detailReject" style="flex:1">✗ Reject</button>` : o.status === 'prepare' ? `<button class="delivery-btn" id="detailDelivery" style="flex:1">🚚 Send Delivery</button>` : ''}</div>` : ''}`;
     openModal('orderDetailModal');
     if ($('detailApprove')) $('detailApprove').onclick = () => { updateOrderStatus(o.id, 'prepare'); closeModal('orderDetailModal'); };
     if ($('detailReject')) $('detailReject').onclick = () => { updateOrderStatus(o.id, 'rejected'); closeModal('orderDetailModal'); };
@@ -741,15 +595,22 @@ function showOrderDetail(id) {
 function renderAdminProducts() {
   const container = $('adminProductsList');
   if (!allProducts.length) { container.innerHTML = '<p style="color:var(--gray);padding:20px;text-align:center">No products yet.</p>'; return; }
-  container.innerHTML = allProducts.map(p => `<div class="admin-product-card"><div class="admin-prod-img">${p.imageUrl ? `<img src="${p.imageUrl}"/>` : (p.emoji || getCatEmoji(p.category))}</div><div class="admin-prod-info"><div class="admin-prod-name">${p.name}</div><div class="admin-prod-meta">${p.category} · Stock: ${p.stock || 0}</div></div><div class="admin-prod-price">$${Number(p.price).toFixed(2)}</div><div class="admin-prod-actions"><button class="edit-btn" data-id="${p.id}">Edit</button><button class="delete-btn" data-id="${p.id}">Delete</button></div></div>`).join('');
+  container.innerHTML = allProducts.map(p => {
+    const sizes = parseVariants(p.sizes);
+    const colors = parseVariants(p.colors);
+    const variantInfo = [sizes.length ? `Sizes: ${sizes.join(', ')}` : '', colors.length ? `Colors: ${colors.join(', ')}` : ''].filter(Boolean).join(' | ');
+    return `<div class="admin-product-card"><div class="admin-prod-img">${p.imageUrl ? `<img src="${p.imageUrl}"/>` : (p.emoji || getCatEmoji(p.category))}</div><div class="admin-prod-info"><div class="admin-prod-name">${p.name}</div><div class="admin-prod-meta">${p.category} · Stock: ${p.stock || 0}</div>${variantInfo ? `<div class="admin-prod-meta" style="color:var(--accent);margin-top:2px;font-size:11px">${variantInfo}</div>` : ''}</div><div class="admin-prod-price">$${Number(p.price).toFixed(2)}</div><div class="admin-prod-actions"><button class="edit-btn" data-id="${p.id}">Edit</button><button class="delete-btn" data-id="${p.id}">Delete</button></div></div>`;
+  }).join('');
   container.querySelectorAll('.edit-btn').forEach(b => b.onclick = () => startEditProduct(b.dataset.id));
   container.querySelectorAll('.delete-btn').forEach(b => b.onclick = () => deleteProduct(b.dataset.id));
 }
+
 function startEditProduct(id) {
   const p = allProducts.find(x => x.id === id); if (!p) return;
   currentEditProductId = id;
   $('ap_name').value = p.name; $('ap_price').value = p.price; $('ap_category').value = p.category;
   $('ap_desc').value = p.description || ''; $('ap_imageUrl').value = p.imageUrl || ''; $('ap_stock').value = p.stock || 0; $('ap_featured').value = String(!!p.featured);
+  $('ap_sizes').value = p.sizes || ''; $('ap_colors').value = p.colors || '';
   if (p.imageUrl) { $('ap_imagePreview').src = p.imageUrl; $('ap_imagePreview').style.display = 'block'; }
   $('addProductTitle').textContent = 'Edit Product'; $('cancelEditBtn').style.display = 'block';
   document.querySelectorAll('.atab').forEach(t => t.classList.remove('active'));
@@ -757,7 +618,11 @@ function startEditProduct(id) {
   document.querySelector('.atab[data-atab="add"]').classList.add('active');
   $('atab-add').classList.add('active');
 }
-function clearProductForm() { ['ap_name', 'ap_price', 'ap_desc', 'ap_imageUrl', 'ap_stock'].forEach(id => $(id).value = ''); $('ap_category').value = 't-shirts'; $('ap_featured').value = 'false'; $('ap_imagePreview').style.display = 'none'; $('apError').textContent = ''; }
+
+function clearProductForm() {
+  ['ap_name', 'ap_price', 'ap_desc', 'ap_imageUrl', 'ap_stock', 'ap_sizes', 'ap_colors'].forEach(id => $(id).value = '');
+  $('ap_category').value = 't-shirts'; $('ap_featured').value = 'false'; $('ap_imagePreview').style.display = 'none'; $('apError').textContent = '';
+}
 function deleteProduct(id) { if (confirm('Delete product?')) db.collection('products').doc(id).delete().then(() => showToast('Deleted')).catch(() => showToast('Error')); }
 $('ap_imageUrl').addEventListener('input', () => { const url = $('ap_imageUrl').value.trim(); $('ap_imagePreview').src = url; $('ap_imagePreview').style.display = url ? 'block' : 'none'; });
 $('ap_imageFile').addEventListener('change', async function () {
@@ -774,14 +639,16 @@ $('ap_imageFile').addEventListener('change', async function () {
   } else showToast('Set CLOUDINARY_PRESET first');
   setTimeout(() => { $('uploadProgress').style.display = 'none'; $('progressFill').style.width = '0%'; }, 1500);
 });
+
 $('saveProductBtn').addEventListener('click', async () => {
   const name = $('ap_name').value.trim(), price = parseFloat($('ap_price').value), category = $('ap_category').value,
     description = $('ap_desc').value.trim(), imageUrl = $('ap_imageUrl').value.trim(),
-    stock = parseInt($('ap_stock').value) || 0, featured = $('ap_featured').value === 'true';
+    stock = parseInt($('ap_stock').value) || 0, featured = $('ap_featured').value === 'true',
+    sizes = $('ap_sizes').value.trim(), colors = $('ap_colors').value.trim();
   const errEl = $('apError'); errEl.textContent = '';
   if (!name) { errEl.textContent = 'Product name required'; return; }
   if (isNaN(price) || price <= 0) { errEl.textContent = 'Valid price required'; return; }
-  const productData = { name, price, category, description, imageUrl, stock, featured, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+  const productData = { name, price, category, description, imageUrl, stock, featured, sizes, colors, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
   try {
     if (currentEditProductId) { await db.collection('products').doc(currentEditProductId).update(productData); showToast('Product updated!'); }
     else { productData.createdAt = firebase.firestore.FieldValue.serverTimestamp(); await db.collection('products').add(productData); showToast('Product added!'); }
@@ -795,9 +662,8 @@ $('cancelEditBtn').addEventListener('click', () => { currentEditProductId = null
 // ==================== ADMIN QR SETTINGS ====================
 async function loadQrSettingsForDisplay() {
   const doc = await db.collection('settings').doc('payment').get();
-  if (doc.exists && doc.data().qrUrl) {
-    globalQrPaymentUrl = doc.data().qrUrl; $('qrImagePreview').src = globalQrPaymentUrl; $('qrImagePreview').style.display = 'block';
-  } else { globalQrPaymentUrl = null; $('qrImagePreview').style.display = 'none'; }
+  if (doc.exists && doc.data().qrUrl) { globalQrPaymentUrl = doc.data().qrUrl; $('qrImagePreview').src = globalQrPaymentUrl; $('qrImagePreview').style.display = 'block'; }
+  else { globalQrPaymentUrl = null; $('qrImagePreview').style.display = 'none'; }
 }
 $('qrImageFile').addEventListener('change', function (e) {
   const file = e.target.files[0];
